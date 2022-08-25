@@ -1,0 +1,53 @@
+#!/bin/sh
+
+IFACE=br0
+BRIDGE_TABLE=br0-mgmt
+
+echo "EVENT PARAMS *********"
+echo "$@"
+
+if [ "x$1" == "xblock_all" ]
+then
+
+    nft delete table bridge "$BRIDGE_TABLE" 2>/dev/null || true
+    nft -f - << EOF
+table bridge $BRIDGE_TABLE {
+        set allowed_macs {
+                type ether_addr
+        }
+
+        chain accesscontrol {
+                ether saddr @allowed_macs accept
+                ether daddr @allowed_macs accept
+                drop
+        }
+
+        chain forward {
+                type filter hook forward priority 0; policy accept;
+                meta ibrname "$IFACE" jump accesscontrol
+        }
+}
+EOF
+    echo "802-1x Blocking all traffic through $IFACE. Traffic for given host will be allowed after 802.1x authentication"
+
+elif [ "x$1" == "xallow_all" ]
+then
+
+    nft delete table bridge "$BRIDGE_TABLE"
+    echo "802-1x Allowed all forwarding again"
+
+fi
+
+case ${2:-NOTANEVENT} in
+
+    AP-STA-CONNECTED | CTRL-EVENT-EAP-SUCCESS | CTRL-EVENT-EAP-SUCCESS2)
+        nft add element bridge "$BRIDGE_TABLE" allowed_macs { $3 }
+        echo "$1: Allowed traffic from $3"
+        ;;
+
+    AP-STA-DISCONNECTED | CTRL-EVENT-EAP-FAILURE)
+        nft delete element bridge "$BRIDGE_TABLE" allowed_macs { $3 }
+        echo "802-1x $1: Denied traffic from $3"
+        ;;
+
+esac

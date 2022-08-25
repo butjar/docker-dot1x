@@ -1,0 +1,79 @@
+services:
+  authentication-server:
+    command: "-X"
+    build: ./freeradius
+    volumes:
+      - ./freeradius/docker-entrypoint.sh:/freeradius/docker-entrypoint.sh
+      - ./etc/raddb/clients.conf:/etc/raddb/clients.conf
+      - ./etc/raddb/mods-available/eap:/etc/raddb/mods-available/eap
+      - ./etc/raddb/sites-available/default:/etc/raddb/sites-available/default
+      - certs:/etc/raddb/certs/
+    networks:
+      aaa:
+        ipv4_address: 172.16.2.2
+
+  authenticator:
+    build: ./hostapd
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      - authentication-server
+    volumes:
+      - ./etc/sysctl.d/dot1x.conf:/etc/sysctl.d/dot1x.conf
+      - ./etc/hostapd/hostapd.conf:/etc/hostapd/hostapd.conf
+      - ./etc/network/interfaces:/etc/network/interfaces
+      - hostapd-ctrl:/var/run/
+      - hostapd-tmp:/tmp/
+    networks:
+      aaa:
+        ipv4_address: 172.16.2.3
+      dot1x:
+    privileged: true
+
+  hostapd_cli:
+    build: ./hostapd_cli
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      - authenticator
+    network_mode: "service:authenticator"
+    volumes:
+      - hostapd-ctrl:/var/run/
+      - hostapd-tmp:/tmp/
+
+  supplicant:
+    build: ./wpa_supplicant
+    depends_on:
+      - hostapd_cli
+    volumes:
+      - ./etc/wpa_supplicant/wpa_supplicant-TLS.conf:/etc/wpa_supplicant.conf
+      - certs:/etc/pki/tls/certs/
+    network_mode: "service:authenticator"
+    command: /bin/sh -c "sleep 5; wpa_supplicant -D wired -i veth0 -c /etc/wpa_supplicant.conf"
+
+  dhcp:
+    build: ./dhcp
+    networks:
+      dot1x:
+        ipv4_address: 172.16.3.2
+    volumes:
+      - ./etc/dhcp/dhcpd.conf:/etc/dhcp/dhcpd.conf
+
+networks:
+  aaa:
+    ipam:
+      driver: default
+      config:
+        - subnet: "172.16.2.0/24"
+  dot1x:
+    ipam:
+      driver: default
+      config:
+        - subnet: "172.16.3.0/24"
+    driver_opts:
+      com.docker.network.container_iface_prefix: dot1x
+
+volumes:
+  certs:
+  hostapd-ctrl:
+  hostapd-tmp:

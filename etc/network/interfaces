@@ -1,0 +1,23 @@
+auto veth0
+auto veth0
+	link-type veth
+	veth-peer-name peer0
+
+auto peer0
+	requires veth0
+
+auto veth1
+auto veth1
+	link-type veth
+	veth-peer-name peer1
+
+auto peer1
+	requires veth1
+
+auto br0
+iface br0
+	requires peer0 peer1
+	bridge-ports peer0 peer1 dot1x0
+	bridge-fd 0
+	bridge-stp off
+	bridge-group-fwd-mask 8
